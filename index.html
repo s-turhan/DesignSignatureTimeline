@@ -287,7 +287,9 @@
     });
 
     // Call on page load
-    showLoggedInUser();
+    window.addEventListener('DOMContentLoaded', () => {
+        showLoggedInUser();
+    });
 
     async function generateBtnClicked() {
         try {
