@@ -3,8 +3,6 @@
   //   context.res = { status: 403, body: { error: 'Access restricted' } };
   //   return;
   // }
-const fetch = require('node-fetch');
-
 const MAX_CHARS = 4000;
 
 module.exports = async function (context, req) {
