@@ -299,12 +299,18 @@
                 body: JSON.stringify({entries})
             });
 
-            const categorized = await response.json();
+            const data = await response.json();
 
-            console.log('Categorization response:', categorized);
+            if (!data.success) {
+                // Backend reported an error
+                console.error('Categorize API error:', data.error);
+                return;
+            }
+
+            console.log('Categorization response:', data);
 
             // Map categories back to entries
-            categorized.forEach((item, i) => {
+            data.results.forEach((item, i) => {
                 entries[i].process_category = item.category || '';
             });
 
