@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Transcript Viewer</title>
+    <style>
+        :root {
+            --px-per-sec: 2;
+            --panel-padding: 16px;
+        }
+
+        body {
+            display: flex;
+            font-family: system-ui, sans-serif;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #left {
+            flex: 4;
+            padding: var(--panel-padding);
+            overflow-y: auto;
+            background: #f9f9f9;
+            position: relative;
+            scroll-behavior: smooth;
+        }
+
+        #right {
+            flex: 2;
+            border-left: 1px solid #ccc;
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .bubble {
+            max-width: 80%;
+            margin: 0.5rem 0;
+            padding: 0.75rem;
+            border-radius: 10px;
+            float: left;
+            clear: both;
+            background: #eaeaea;
+            position: relative;
+            transition: box-shadow 0.2s;
+        }
+
+        .bubble.highlight {
+            box-shadow: 0 0 8px 2px #007bff;
+        }
+
+        .speaker {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 600;
+        }
+
+        .speaker .edit {
+            text-decoration: underline;
+        }
+
+        .speaker .arrow, .speaker .edit {
+            opacity: 0;
+            transition: opacity 0.2s;
+            cursor: pointer;
+        }
+
+        .speaker:hover .arrow, .speaker:hover .edit {
+            opacity: 1;
+        }
+
+        .msg-controls {
+            position: absolute;
+            bottom: 4px;
+            right: 8px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .bubble:hover .msg-controls {
+            opacity: 1;
+        }
+
+        .msg-controls .edit {
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        .meta {
+            font-size: 0.75rem;
+            color: #555;
+            margin-top: 0.25rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .process-tag {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        #timelineWrap {
+            padding: var(--panel-padding);
+            overflow-y: auto;
+            flex: 1;
+            border-bottom: 1px solid #eee;
+        }
+
+        .timeline-item {
+            margin: 4px 0;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .timeline-item.active {
+            background: #e6f0ff;
+            font-weight: 600;
+            color: #0057c2;
+        }
+
+        #scale {
+            position: relative;
+            border-left: 2px solid #333;
+            margin-left: 50px;
+        }
+
+        .tick {
+            position: absolute;
+            left: -8px;
+            width: 8px;
+            border-top: 1px solid #777;
+        }
+
+        .tick.major {
+            border-top-color: #333;
+            left: -12px;
+            width: 12px;
+            font-size: 0.7rem;
+            color: #333;
+            transform: translateY(-50%);
+        }
+
+        .tick.major .label {
+            position: absolute;
+            left: -80px;
+            top: -8px;
+            width: 76px;
+            text-align: right;
+        }
+
+        .segment {
+            position: absolute;
+            left: 0;
+            width: 10px;
+            border-radius: 6px;
+            transform: translateX(-50%);
+            opacity: 0.9;
+        }
+
+        #generateBtn {
+            margin-bottom: 8px;
+            padding: 6px 12px;
+        }
+
+        #legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            font-size: 0.8rem;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 6px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            background: #fafafa;
+        }
+
+        .chip .color {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+        }
+
+        .inline-input {
+            font: inherit;
+            padding: 2px 4px;
+            border: 1px solid #bbb;
+            border-radius: 4px;
+            background: #fff;
+        }
+    </style>
+</head>
+<body>
+<div id="left">
+    <h2>Transcript</h2>
+    <input id="fileInput" type="file" accept=".docx"/>
+    <div id="chat"></div>
+</div>
+<div id="right">
+    <h2>Timeline</h2>
+    <div id="timelineWrap">
+        <div id="timeline"></div>
+    </div>
+
+    <div id="viz-header" style="padding: var(--panel-padding) var(--panel-padding) 0 var(--panel-padding);">
+        <div id="legend"></div>
+        <div id="process-legend" style="display: flex; margin-top: 8px; padding-left: calc(80px + 12px); gap: 20px;">
+        </div>
+    </div>
+
+    <div id="viz-body" style="max-height: 40%; overflow-y: auto; display: flex; padding: 0 var(--panel-padding);">
+        <div id="scale"></div>
+        <div id="process-timeline" style="display: flex; padding-left: 40px; gap: 20px;">
+        </div>
+    </div>
+
+    <div style="padding: var(--panel-padding); border-top: 1px solid #eee;">
+        <button id="generateBtn">Generate Design Signature Timeline</button>
+    </div>
+</div>
+
+<script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
+<script>
+    let entries = [];
+    let startSec = 0, endSec = 0;
+    const speakerColors = {};
+    const categoryColors = {PROB: "#d9534f", SOLN: "#5cb85c"};
+    let scrollSyncHandler;
+
+    fileInput.addEventListener('change', async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const arrayBuffer = await file.arrayBuffer();
+        const {value: html} = await mammoth.convertToHtml({arrayBuffer});
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const sections = extractH1Sections(doc);
+        const transcriptText = getSection(sections, 'Transcript');
+        entries = parseTranscript(transcriptText);
+        if (!entries.length) return;
+        entries.forEach(e => e.process_category = "");
+        startSec = toSeconds(entries[0].time);
+        endSec = toSeconds(entries[entries.length - 1].time);
+        assignSpeakerColors();
+        renderAll();
+    });
+
+    function generateBtnClicked() {
+        const promptTemplate = "Considering the two design process definitions given below:\n" +
+            "- Problem (PROB): Any activities that enable designers to understand both the broad and specific attributes of the problem they are solving: Problem analysis, identifying requirements and constraints, search for and collect information\n" +
+            "- Solution (SOLN): Any activities that designers engage in that contribute to creating solutions for the problem: thinking up potential solutions, detail how to build solutions(s), build solutions, compare and contrast solutions, select final solution\n" +
+            " \n" +
+            "Please categorize the transcription given below. " +
+            "Do not mark down anything if what is being said does not fit the above categories. " +
+            "The output format should be ";
+        // compose the prompts
+        //
+        //
+    }
+
+    generateBtn.addEventListener('click', () => {
+        const categories = Object.keys(categoryColors);
+        entries.forEach(e => e.process_category = categories[Math.floor(Math.random() * categories.length)]);
+        generateBtnClicked();
+        renderAll();
+    });
+
+    function extractH1Sections(doc) {
+        const h1s = [...doc.querySelectorAll('h1')];
+        const sections = {};
+        for (let i = 0; i < h1s.length; i++) {
+            const title = h1s[i].textContent.trim();
+            const content = [];
+            let node = h1s[i].nextSibling;
+            while (node && !(node.nodeType === 1 && node.tagName.toLowerCase() === 'h1')) {
+                if (node.nodeType === 1) content.push(node.textContent.trim());
+                node = node.nextSibling;
+            }
+            sections[title] = content.join('\n');
+        }
+        return sections;
+    }
+
+    function getSection(sections, title) {
+        const keys = Object.keys(sections);
+        const exact = keys.find(k => k.toLowerCase() === title.toLowerCase());
+        if (exact) return sections[exact];
+        const partial = keys.find(k => k.toLowerCase().includes(title.toLowerCase()));
+        return partial ? sections[partial] : '';
+    }
+
+    function parseTranscript(raw) {
+        const lines = raw.split(/\r?\n/).map(l => l.trim());
+        const result = [];
+        let current = null;
+        const regex = /^(\d{2}:\d{2}:\d{2})\s+(.+)$/;
+        for (const line of lines) {
+            if (!line) continue;
+            const m = line.match(regex);
+            if (m) {
+                if (current) result.push(current);
+                current = {time: m[1], speaker: m[2], text: ''};
+            } else if (current) {
+                current.text += (current.text ? ' ' : '') + line;
+            }
+        }
+        if (current) result.push(current);
+        return result;
+    }
+
+    function toSeconds(t) {
+        const [h, m, s] = t.split(':').map(Number);
+        return h * 3600 + m * 60 + s;
+    }
+
+    function fmtTime(sec) {
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const s = sec % 60;
+        const pad = n => String(n).padStart(2, '0');
+        return `${pad(h)}:${pad(m)}:${pad(s)}`;
+    }
+
+    function getSpeakers() {
+        return [...new Set(entries.map(e => e.speaker))];
+    }
+
+    function assignSpeakerColors() {
+        getSpeakers().forEach((spk, i) => {
+            if (!speakerColors[spk]) {
+                const hue = (i * 137) % 360; // golden angle
+                speakerColors[spk] = `hsl(${hue},80%,90%)`;
+            }
+        });
+    }
+
+    function renderAll() {
+        renderChat();
+        renderTimeline();
+        renderScale();
+        renderLegend();
+        renderProcessTimeline();
+        setupScrollSync();
+    }
+
+    function renderChat() {
+        chat.innerHTML = '';
+        entries.forEach((e, idx) => {
+            const div = document.createElement('div');
+            div.className = 'bubble';
+            div.style.background = speakerColors[e.speaker] || '#eaeaea';
+            div.id = 'msg-' + idx;
+            div.innerHTML = `
+      <div class="speaker">
+        <span class="arrow arrow-left">&lt;</span>
+        <span class="name">${escapeHtml(e.speaker)}</span>
+        <span class="edit">✎</span>
+        <span class="arrow arrow-right">&gt;</span>
+      </div>
+      <div class="text">${escapeHtml(e.text)}</div>
+      <div class="meta">
+        <span class="time">${e.time}</span>
+        ${e.process_category ? `<span class="process-tag" style="background:${categoryColors[e.process_category]}">${e.process_category}</span>` : ''}
+      </div>
+      <div class="msg-controls"><span class="edit">✎</span></div>
+    `;
+            // Speaker controls
+            div.querySelector('.arrow-left').onclick = () => cycleSpeaker(idx, -1);
+            div.querySelector('.arrow-right').onclick = () => cycleSpeaker(idx, 1);
+            div.querySelector('.speaker .edit').onclick = () => editSpeaker(idx, div);
+            // Message edit
+            div.querySelector('.msg-controls .edit').onclick = () => editMessage(idx, div);
+            // Process tag edit
+            const processTag = div.querySelector('.process-tag');
+            if (processTag) {
+                processTag.onclick = (ev) => showCategoryMenu(idx, ev.target);
+            }
+            chat.appendChild(div);
+        });
+        chat.appendChild(Object.assign(document.createElement('div'), {style: 'clear:both'}));
+    }
+
+    function renderTimeline() {
+        timeline.innerHTML = '';
+        entries.forEach((e, idx) => {
+            const row = document.createElement('div');
+            row.className = 'timeline-item';
+            row.innerHTML = `<span>${e.time} — ${escapeHtml(e.speaker)}</span>`;
+            row.onclick = () => scrollBubbleIntoView(idx);
+            timeline.appendChild(row);
+        });
+    }
+
+    function renderScale() {
+        const pxPerSec = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--px-per-sec')) || 2;
+        const duration = Math.max(0, endSec - startSec);
+        scale.style.height = Math.max(200, duration * pxPerSec) + 'px';
+        scale.innerHTML = '';
+        for (let t = 0; t <= duration; t += 10) {
+            const y = t * pxPerSec;
+            const tick = document.createElement('div');
+            tick.className = 'tick';
+            tick.style.top = y + 'px';
+            if (t % 60 === 0) {
+                tick.classList.add('major');
+                const label = document.createElement('div');
+                label.className = 'label';
+                label.textContent = fmtTime(startSec + t);
+                tick.appendChild(label);
+            }
+            scale.appendChild(tick);
+        }
+        for (let i = 0; i < entries.length; i++) {
+            const curT = toSeconds(entries[i].time);
+            const nextT = i < entries.length - 1 ? toSeconds(entries[i + 1].time) : endSec;
+            const yTop = (curT - startSec) * pxPerSec;
+            const height = Math.max(2, (nextT - curT) * pxPerSec);
+            const seg = document.createElement('div');
+            seg.className = 'segment';
+            seg.style.top = yTop + 'px';
+            seg.style.height = height + 'px';
+            seg.style.background = speakerColors[entries[i].speaker] || '#ccc';
+            scale.appendChild(seg);
+        }
+    }
+
+    function renderProcessTimeline() {
+        const legendContainer = document.getElementById('process-legend');
+        const timelineContainer = document.getElementById('process-timeline');
+        legendContainer.innerHTML = '';
+        timelineContainer.innerHTML = '';
+
+        const categories = Object.keys(categoryColors);
+        const pxPerSec = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--px-per-sec')) || 2;
+        const duration = Math.max(0, endSec - startSec);
+        const totalHeight = Math.max(200, duration * pxPerSec);
+
+        categories.forEach(cat => {
+            const legendEl = document.createElement('div');
+            legendEl.textContent = cat;
+            legendEl.style.color = categoryColors[cat];
+            legendEl.style.fontWeight = 'bold';
+            legendEl.style.width = '50px';
+            legendEl.style.textAlign = 'center';
+            legendContainer.appendChild(legendEl);
+
+            const timelineEl = document.createElement('div');
+            timelineEl.style.position = 'relative';
+            timelineEl.style.width = '50px';
+            timelineEl.style.height = totalHeight + 'px';
+
+            const line = document.createElement('div');
+            line.style.position = 'absolute';
+            line.style.left = '50%';
+            line.style.transform = 'translateX(-50%)';
+            line.style.width = '2px';
+            line.style.height = '100%';
+            line.style.background = '#eee';
+            timelineEl.appendChild(line);
+
+            for (let i = 0; i < entries.length; i++) {
+                if (entries[i].process_category === cat) {
+                    const curT = toSeconds(entries[i].time);
+                    const nextT = i < entries.length - 1 ? toSeconds(entries[i + 1].time) : endSec;
+                    const yTop = (curT - startSec) * pxPerSec;
+                    const height = Math.max(2, (nextT - curT) * pxPerSec);
+
+                    const seg = document.createElement('div');
+                    seg.style.position = 'absolute';
+                    seg.style.left = '50%';
+                    seg.style.transform = 'translateX(-50%)';
+                    seg.style.width = '20px';
+                    seg.style.borderRadius = '5px';
+                    seg.style.top = yTop + 'px';
+                    seg.style.height = height + 'px';
+                    seg.style.background = categoryColors[cat];
+                    seg.style.cursor = 'pointer';
+
+                    seg.onmouseover = () => {
+                        const bubble = document.getElementById('msg-' + i);
+                        if (bubble) bubble.classList.add('highlight');
+                    };
+                    seg.onmouseout = () => {
+                        const bubble = document.getElementById('msg-' + i);
+                        if (bubble) bubble.classList.remove('highlight');
+                    };
+                    seg.onclick = () => scrollBubbleIntoView(i);
+
+                    timelineEl.appendChild(seg);
+                }
+            }
+            timelineContainer.appendChild(timelineEl);
+        });
+    }
+
+    function renderLegend() {
+        const legend = document.getElementById('legend');
+        legend.innerHTML = '';
+        getSpeakers().forEach(spk => {
+            const chip = document.createElement('div');
+            chip.className = 'chip';
+            chip.innerHTML = `<span class="color" style="background:${speakerColors[spk]}"></span>${escapeHtml(spk)}`;
+            legend.appendChild(chip);
+        });
+    }
+
+    function showCategoryMenu(idx, target) {
+        const menu = document.createElement('div');
+        menu.style.position = 'absolute';
+        menu.style.background = 'white';
+        menu.style.border = '1px solid #ccc';
+        menu.style.borderRadius = '4px';
+        menu.style.padding = '4px';
+        menu.style.zIndex = '100';
+
+        const categories = Object.keys(categoryColors);
+
+        categories.forEach(cat => {
+            const item = document.createElement('div');
+            item.textContent = cat || 'None';
+            item.style.padding = '4px 8px';
+            item.style.cursor = 'pointer';
+            item.onmouseover = () => item.style.background = '#f0f0f0';
+            item.onmouseout = () => item.style.background = 'white';
+            item.onclick = () => {
+                entries[idx].process_category = cat;
+                document.body.removeChild(menu);
+                renderAll();
+            };
+            menu.appendChild(item);
+        });
+
+        document.body.appendChild(menu);
+        const rect = target.getBoundingClientRect();
+        menu.style.left = rect.left + 'px';
+        menu.style.top = rect.bottom + 'px';
+
+        setTimeout(() => {
+            const clickOutsideHandler = (e) => {
+                if (!menu.contains(e.target)) {
+                    document.body.removeChild(menu);
+                    document.removeEventListener('click', clickOutsideHandler);
+                }
+            };
+            document.addEventListener('click', clickOutsideHandler);
+        }, 0);
+    }
+
+    function scrollBubbleIntoView(idx) {
+        const bubble = document.getElementById('msg-' + idx);
+        if (!bubble) return;
+        const targetTop = bubble.offsetTop - 8;
+        left.scrollTo({top: targetTop, behavior: 'smooth'});
+    }
+
+    function setupScrollSync() {
+        if (scrollSyncHandler) {
+            left.removeEventListener('scroll', scrollSyncHandler);
+        }
+        const items = [...timeline.querySelectorAll('.timeline-item')];
+        const bubbles = entries.map((_, idx) => document.getElementById('msg-' + idx));
+        scrollSyncHandler = () => {
+            let activeIdx = 0;
+            for (let i = 0; i < bubbles.length; i++) {
+                if (bubbles[i] && bubbles[i].offsetTop < left.scrollTop + 100) activeIdx = i;
+            }
+            items.forEach(el => el.classList.remove('active'));
+            if (items[activeIdx]) {
+                items[activeIdx].classList.add('active');
+                items[activeIdx].scrollIntoView({block: 'nearest'});
+            }
+        };
+        left.addEventListener('scroll', scrollSyncHandler);
+    }
+
+    function editSpeaker(idx, bubbleEl) {
+        const current = entries[idx].speaker;
+        const nameEl = bubbleEl.querySelector('.name');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = current;
+        input.className = 'inline-input';
+        nameEl.replaceWith(input);
+        input.focus();
+        input.onkeydown = ev => {
+            if (ev.key === 'Enter') {
+                const newName = input.value.trim() || current;
+                entries.forEach(e => {
+                    if (e.speaker === current) e.speaker = newName;
+                });
+                if (!speakerColors[newName]) {
+                    const idxColor = Object.keys(speakerColors).length;
+                    speakerColors[newName] = `hsl(${(idxColor * 137) % 360},80%,90%)`;
+                }
+                renderAll();
+            } else if (ev.key === 'Escape') {
+                renderAll();
+            }
+        };
+    }
+
+    function cycleSpeaker(idx, dir) {
+        const speakers = getSpeakers();
+        const cur = entries[idx].speaker;
+        let i = speakers.indexOf(cur);
+        if (i === -1) i = 0;
+        i = (i + dir + speakers.length) % speakers.length;
+        const newName = speakers[i];
+        entries[idx].speaker = newName;
+        renderAll();
+    }
+
+    function editMessage(idx, bubbleEl) {
+        const textEl = bubbleEl.querySelector('.text');
+        const timeEl = bubbleEl.querySelector('.meta .time');
+
+        // Create inputs
+        const txtInput = document.createElement('textarea');
+        txtInput.className = 'inline-input';
+        txtInput.style.width = '100%';
+        txtInput.value = entries[idx].text;
+
+        const timeInput = document.createElement('input');
+        timeInput.className = 'inline-input';
+        timeInput.type = 'text';
+        timeInput.value = entries[idx].time;
+        timeInput.placeholder = 'HH:MM:SS';
+
+        textEl.replaceWith(txtInput);
+        timeEl.replaceWith(timeInput);
+        txtInput.focus();
+
+        const save = () => {
+            const newText = txtInput.value.trim();
+            const newTime = timeInput.value.trim();
+            if (!/^\d{2}:\d{2}:\d{2}$/.test(newTime)) {
+                alert('Invalid time format. Use HH:MM:SS.');
+                return;
+            }
+            entries[idx].text = newText;
+            entries[idx].time = newTime;
+            startSec = toSeconds(entries[0].time);
+            endSec = toSeconds(entries[entries.length - 1].time);
+            renderAll();
+        };
+        const cancel = () => renderAll();
+
+        txtInput.addEventListener('keydown', ev => {
+            if (ev.key === 'Enter' && !ev.shiftKey) {
+                ev.preventDefault();
+                save();
+            } else if (ev.key === 'Escape') {
+                cancel();
+            }
+        });
+        timeInput.addEventListener('keydown', ev => {
+            if (ev.key === 'Enter') {
+                save();
+            } else if (ev.key === 'Escape') {
+                cancel();
+            }
+        });
+    }
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+</script>
+</body>
+</html>
