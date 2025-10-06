@@ -212,7 +212,11 @@
     <div id="chat"></div>
 </div>
 <div id="right">
-    <h2>Timeline</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2>Timeline</h2>
+        <div id="user-info" style="font-size:0.9em; color:#666;"></div>
+        <button id="logoutBtn" style="font-size:0.8em; padding:2px 6px;">Logout</button>
+    </div>
     <div id="timelineWrap">
         <div id="timeline"></div>
     </div>
@@ -260,22 +264,57 @@
         renderAll();
     });
 
-    async function generateBtnClicked() {
-        const response = await fetch('/api/categorize', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({entries})
-        });
-
-        const categorized = await response.json();
-
-        // Match categories back to entries
-        categorized.forEach((item, i) => {
-            entries[i].process_category = item.category || '';
-        });
-
-        renderAll();
+    async function showLoggedInUser() {
+        try {
+            const res = await fetch('/.auth/me');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data && data.length > 0) {
+                const email = data[0].userDetails;
+                document.getElementById('user-info').textContent = `Signed in as ${email}`;
+                console.log('Logged in user:', data[0]);
+            }
+        } catch (err) {
+            console.error('Error fetching user info:', err);
+        }
     }
+
+    // Logout handler
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+        // Redirect to logout, then back to the homepage
+        const redirectUri = window.location.origin; // e.g. https://yoursite.azurestaticapps.net
+        window.location.href = `/.auth/logout?post_logout_redirect_uri=${encodeURIComponent(redirectUri)}`;
+    });
+
+    // Call on page load
+    showLoggedInUser();
+
+    async function generateBtnClicked() {
+        try {
+            const response = await fetch('/api/categorize', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({entries})
+            });
+
+            const categorized = await response.json();
+
+            console.log('Categorization response:', categorized);
+
+            // Map categories back to entries
+            categorized.forEach((item, i) => {
+                entries[i].process_category = item.category || '';
+            });
+
+            renderAll();
+        } catch (err) {
+            console.error('Error calling categorize API:', err);
+        }
+    }
+
+    generateBtn.addEventListener('click', () => {
+        generateBtnClicked();
+    });
 
     generateBtn.addEventListener('click', () => {
         const categories = Object.keys(categoryColors);

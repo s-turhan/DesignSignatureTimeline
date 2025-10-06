@@ -3,6 +3,21 @@ const fetch = require('node-fetch');
 const MAX_CHARS = 4000; // adjust based on model limits
 
 module.exports = async function (context, req) {
+  // 🔑 Decode identity info (optional restriction)
+  const clientPrincipalHeader = req.headers['x-ms-client-principal'];
+  let email = '';
+  if (clientPrincipalHeader) {
+    const decoded = Buffer.from(clientPrincipalHeader, 'base64').toString('ascii');
+    const clientPrincipal = JSON.parse(decoded);
+    email = clientPrincipal.userDetails || '';
+  }
+
+  // Restrict if you want
+  // if (!email.endsWith('@uwaterloo.ca')) {
+  //   context.res = { status: 403, body: { error: 'Access restricted' } };
+  //   return;
+  // }
+
   const entries = req.body.entries || [];
   const texts = entries.map(e => e.text);
 
@@ -22,27 +37,34 @@ module.exports = async function (context, req) {
   }
   if (currentBatch.length > 0) batches.push(currentBatch);
 
-  // Sequentially process batches
   const results = [];
+  const debugMode = (process.env.DEBUG_MODE || '').toLowerCase() === 'true';
+
   for (const batch of batches) {
     const prompt = buildPrompt(batch);
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'gpt-4',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2
-      })
-    });
+    if (debugMode) {
+      console.log('DEBUG: Would send prompt to OpenAI:\n', prompt);
+      // Return mock categories for testing
+      results.push(...batch.map(text => ({ text, category: 'DEBUG' })));
+    } else {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2
+        })
+      });
 
-    const data = await response.json();
-    const parsed = safeParse(data.choices[0].message.content);
-    results.push(...parsed);
+      const data = await response.json();
+      const parsed = safeParse(data.choices[0].message.content);
+      results.push(...parsed);
+    }
   }
 
   context.res = {
@@ -64,6 +86,7 @@ function safeParse(content) {
   try {
     return JSON.parse(content);
   } catch {
+    console.error('Failed to parse model output:', content);
     return [];
   }
 }
