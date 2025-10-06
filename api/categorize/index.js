@@ -9,6 +9,10 @@ const MAX_CHARS = 4000;
 
 module.exports = async function (context, req) {
   try {
+    const body = req.body || {};
+    const entries = Array.isArray(body.entries) ? body.entries : [];
+    const texts = entries.map(e => e.text);
+
     // 🔑 Identity (optional)
     const clientPrincipalHeader = req.headers['x-ms-client-principal'];
     let email = '';
@@ -17,9 +21,6 @@ module.exports = async function (context, req) {
       const clientPrincipal = JSON.parse(decoded);
       email = clientPrincipal.userDetails || '';
     }
-
-    const entries = req.body.entries || [];
-    const texts = entries.map(e => e.text);
 
     // batching
     const batches = [];

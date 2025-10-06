@@ -296,20 +296,24 @@
             const response = await fetch('/api/categorize', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({entries})
+                body: JSON.stringify({entries})   // ensure `entries` is defined
             });
+
+            if (!response.ok) {
+                const text = await response.text();
+                console.error('API returned error:', response.status, text);
+                return;
+            }
 
             const data = await response.json();
 
             if (!data.success) {
-                // Backend reported an error
                 console.error('Categorize API error:', data.error);
                 return;
             }
 
             console.log('Categorization response:', data);
 
-            // Map categories back to entries
             data.results.forEach((item, i) => {
                 entries[i].process_category = item.category || '';
             });
