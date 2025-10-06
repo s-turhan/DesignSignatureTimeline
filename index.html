@@ -251,6 +251,7 @@
         const sections = extractH1Sections(doc);
         const transcriptText = getSection(sections, 'Transcript');
         entries = parseTranscript(transcriptText);
+        console.log(entries);
         if (!entries.length) return;
         entries.forEach(e => e.process_category = "");
         startSec = toSeconds(entries[0].time);
@@ -259,17 +260,21 @@
         renderAll();
     });
 
-    function generateBtnClicked() {
-        const promptTemplate = "Considering the two design process definitions given below:\n" +
-            "- Problem (PROB): Any activities that enable designers to understand both the broad and specific attributes of the problem they are solving: Problem analysis, identifying requirements and constraints, search for and collect information\n" +
-            "- Solution (SOLN): Any activities that designers engage in that contribute to creating solutions for the problem: thinking up potential solutions, detail how to build solutions(s), build solutions, compare and contrast solutions, select final solution\n" +
-            " \n" +
-            "Please categorize the transcription given below. " +
-            "Do not mark down anything if what is being said does not fit the above categories. " +
-            "The output format should be ";
-        // compose the prompts
-        //
-        //
+    async function generateBtnClicked() {
+        const response = await fetch('/api/categorize', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({entries})
+        });
+
+        const categorized = await response.json();
+
+        // Match categories back to entries
+        categorized.forEach((item, i) => {
+            entries[i].process_category = item.category || '';
+        });
+
+        renderAll();
     }
 
     generateBtn.addEventListener('click', () => {

@@ -1,0 +1,69 @@
+const fetch = require('node-fetch');
+
+const MAX_CHARS = 4000; // adjust based on model limits
+
+module.exports = async function (context, req) {
+  const entries = req.body.entries || [];
+  const texts = entries.map(e => e.text);
+
+  // Batch texts by character limit
+  const batches = [];
+  let currentBatch = [];
+  let currentLength = 0;
+
+  for (const text of texts) {
+    if (currentLength + text.length > MAX_CHARS) {
+      batches.push(currentBatch);
+      currentBatch = [];
+      currentLength = 0;
+    }
+    currentBatch.push(text);
+    currentLength += text.length;
+  }
+  if (currentBatch.length > 0) batches.push(currentBatch);
+
+  // Sequentially process batches
+  const results = [];
+  for (const batch of batches) {
+    const prompt = buildPrompt(batch);
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.2
+      })
+    });
+
+    const data = await response.json();
+    const parsed = safeParse(data.choices[0].message.content);
+    results.push(...parsed);
+  }
+
+  context.res = {
+    headers: { 'Content-Type': 'application/json' },
+    body: results
+  };
+};
+
+function buildPrompt(batch) {
+  return `Considering the two design process definitions given below:
+- Problem (PROB): Any activities that enable designers to understand both the broad and specific attributes of the problem they are solving: Problem analysis, identifying requirements and constraints, search for and collect information
+- Solution (SOLN): Any activities that designers engage in that contribute to creating solutions for the problem: thinking up potential solutions, detail how to build solutions(s), build solutions, compare and contrast solutions, select final solution
+
+Please categorize the following transcription snippets. Do not mark anything if it doesn't fit. Format as JSON array:
+${JSON.stringify(batch.map(text => ({ text })), null, 2)}`;
+}
+
+function safeParse(content) {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return [];
+  }
+}
