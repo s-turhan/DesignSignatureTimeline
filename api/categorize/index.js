@@ -1,5 +1,5 @@
-const Anthropic = require("@anthropic-ai/sdk");
-const PQueue = require("p-queue");
+import Anthropic from "@anthropic-ai/sdk";
+import PQueue from "p-queue";
 
 const MAX_CHARS = 4000;
 
