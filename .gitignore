@@ -1,2 +1,3 @@
 /.idea
 /api/categorize/node_modules
+/api/categorize/package-lock.json
