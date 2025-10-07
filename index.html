@@ -255,7 +255,7 @@
         const sections = extractH1Sections(doc);
         const transcriptText = getSection(sections, 'Transcript');
         entries = parseTranscript(transcriptText);
-        console.log(entries);
+        // console.log(entries);
         if (!entries.length) return;
         entries.forEach(e => e.process_category = "");
         startSec = toSeconds(entries[0].time);

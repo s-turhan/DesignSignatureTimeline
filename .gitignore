@@ -1,3 +1,5 @@
 /.idea
 /api/node_modules
 /api/package-lock.json
+/api/host.json
+/api/local.settings.json

@@ -68,23 +68,35 @@ export default async function (context, req) {
             const prompt = buildPrompt(batch);
 
             if (debugMode) {
-                console.log("DEBUG: Would send prompt to Anthropic:\n", prompt);
+                // console.log("DEBUG: Would send prompt to Anthropic:\n", prompt);
                 results.push(...batch.map(text => ({text, category: "DEBUG"})));
-
-                if (debugApiMode) {
-                    // include prompt in response
-                    results.push({__debugPrompt: prompt});
-                }
-            } else {
+            }
+            if (!debugMode || debugApiMode) {
                 const response = await globalQueue.add(() =>
                     anthropic.messages.create({
-                        model: "claude-3-5-sonnet-20240620",
-                        max_tokens: 500,
-                        messages: [{role: "user", content: prompt}],
+                        // model: "claude-3-5-sonnet-20240620",
+                        model: "claude-3-haiku-20240307",
+                        max_tokens: 3000,
+                        messages: [
+                            {
+                                role: "system",
+                                content: `You are a JSON-only classifier. 
+Always respond with a valid JSON array, no extra text or commentary. 
+Each element must be an object with keys "text" and "category". 
+Allowed categories: "PROB", "SOLN", or "" (empty string).`
+                            },
+                            {
+                                role: "user",
+                                content: prompt
+                            }
+                        ],
                     })
                 );
 
                 const content = response.content?.[0]?.text;
+                console.log("Anthropic raw response:", JSON.stringify(response, null, 2));
+                console.log("Anthropic content:", content);
+                console.log("Test");
                 if (!content) throw new Error("Unexpected Anthropic response");
 
                 const parsed = safeParse(content);
@@ -108,11 +120,25 @@ export default async function (context, req) {
 };
 
 function buildPrompt(batch) {
-    return `Considering the two design process definitions given below:
-- Problem (PROB): Any activities that enable designers to understand both the broad and specific attributes of the problem they are solving: Problem analysis, identifying requirements and constraints, search for and collect information
-- Solution (SOLN): Any activities that designers engage in that contribute to creating solutions for the problem: thinking up potential solutions, detail how to build solutions(s), build solutions, compare and contrast solutions, select final solution
+    return `Definitions:
+- Problem (PROB): Activities that enable designers to understand the problem, analyze requirements, constraints, gather information.
+- Solution (SOLN): Activities that contribute to creating solutions: generating ideas, detailing, building, comparing, selecting.
 
-Please categorize the following transcription snippets. Do not mark anything if it doesn't fit. Format as JSON array:
+Example input:
+[
+  {"text": "We need to gather more requirements from the client."},
+  {"text": "Let's brainstorm possible design alternatives."},
+  {"text": "The weather is nice today."}
+]
+
+Example output:
+[
+  {"text": "We need to gather more requirements from the client.", "category": "PROB"},
+  {"text": "Let's brainstorm possible design alternatives.", "category": "SOLN"},
+  {"text": "The weather is nice today.", "category": ""}
+]
+
+Now categorize the following snippets:
 ${JSON.stringify(batch.map(text => ({text})), null, 2)}`;
 }
 
