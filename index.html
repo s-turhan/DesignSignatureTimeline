@@ -213,7 +213,7 @@
 </div>
 <div id="right">
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h2>Timeline</h2>
+        <h2>Design Signature</h2>
         <div id="user-info" style="font-size:0.9em; color:#666;"></div>
         <button id="logoutBtn" style="font-size:0.8em; padding:2px 6px;">Logout</button>
     </div>
@@ -235,10 +235,12 @@
 
     <div style="padding: var(--panel-padding); border-top: 1px solid #eee;">
         <button id="generateBtn">Generate Design Signature Timeline</button>
+        <button id="downloadBtn" style="margin-left: 8px;">Download as PNG</button>
     </div>
 </div>
 
 <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
     let entries = [];
     let startSec = 0, endSec = 0;
@@ -345,14 +347,121 @@
         } finally {
             generateBtn.disabled = false;
             generateBtn.textContent = prev_text;
+            downloadBtn.hidden = false;
         }
     }
 
     generateBtn.addEventListener('click', () => {
-        const categories = Object.keys(categoryColors);
         generateBtnClicked();
         renderAll();
     });
+
+    downloadBtn.addEventListener('click', downloadPlot);
+    downloadBtn.hidden = true;
+
+    function downloadPlot() {
+        if (!entries.some(e => e.process_category)) {
+            alert("Please generate the timeline first to categorize entries.");
+            return;
+        }
+
+        const prob_x = [];
+        const prob_base = [];
+        const soln_x = [];
+        const soln_base = [];
+
+        for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i];
+            if (entry.process_category === 'PROB' || entry.process_category === 'SOLN') {
+                const start = toSeconds(entry.time);
+                const end = (i < entries.length - 1) ? toSeconds(entries[i + 1].time) : endSec;
+                const duration = end - start;
+
+                if (entry.process_category === 'PROB') {
+                    prob_x.push(duration);
+                    prob_base.push(start);
+                } else { // SOLN
+                    soln_x.push(duration);
+                    soln_base.push(start);
+                }
+            }
+        }
+
+        const prob_trace = {
+            x: prob_x,
+            y: Array(prob_x.length).fill('PROB'),
+            base: prob_base,
+            name: 'PROB',
+            type: 'bar',
+            orientation: 'h',
+            marker: {
+                color: '#1f77b4' // tab:blue
+            }
+        };
+
+        const soln_trace = {
+            x: soln_x,
+            y: Array(soln_x.length).fill('SOLN'),
+            base: soln_base,
+            name: 'SOLN',
+            type: 'bar',
+            orientation: 'h',
+            marker: {
+                color: '#1f77b4' // tab:blue
+            }
+        };
+
+        const data = [prob_trace, soln_trace];
+
+        const tickvals = [];
+        const ticktext = [];
+        const duration = endSec - startSec;
+        const step = duration > 600 ? 300 : 60;
+        for (let t = 0; t <= duration; t += step) {
+            tickvals.push(startSec + t);
+            ticktext.push(fmtTime(startSec + t));
+        }
+        if (tickvals[tickvals.length - 1] < endSec) {
+            tickvals.push(endSec);
+            ticktext.push(fmtTime(endSec));
+        }
+
+        const layout = {
+            title: 'Design Signature Timeline',
+            xaxis: {
+                title: 'Time',
+                tickvals: tickvals,
+                ticktext: ticktext,
+                range: [startSec, endSec]
+            },
+            yaxis: {
+                title: '',
+                automargin: true,
+            },
+            bargap: 0.2,
+            showlegend: false
+        };
+
+        const plotDiv = document.createElement('div');
+        plotDiv.style.width = '1200px';
+        plotDiv.style.height = '400px';
+        plotDiv.style.position = 'absolute';
+        plotDiv.style.left = '-9999px';
+        document.body.appendChild(plotDiv);
+
+        Plotly.newPlot(plotDiv, data, layout).then(gd => {
+            Plotly.toImage(gd, {format: 'png', width: 1200, height: 400})
+                .then(dataUrl => {
+                    const a = document.createElement('a');
+                    a.href = dataUrl;
+                    a.download = 'design_signature_timeline.png';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    document.body.removeChild(plotDiv);
+                });
+        });
+    }
 
     function extractH1Sections(doc) {
         const h1s = [...doc.querySelectorAll('h1')];
