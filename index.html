@@ -24,6 +24,7 @@
             background: #f9f9f9;
             position: relative;
             scroll-behavior: smooth;
+            transition: flex 0.5s ease-in-out;
         }
 
         #right {
@@ -33,6 +34,7 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            transition: flex 0.5s ease-in-out;
         }
 
         .bubble {
@@ -111,6 +113,15 @@
             overflow-y: auto;
             flex: 1;
             border-bottom: 1px solid #eee;
+            transition: flex 0.5s ease-in-out;
+        }
+
+        #viz-body {
+            max-height: 40%;
+            overflow-y: auto;
+            display: flex;
+            padding: 0 var(--panel-padding);
+            transition: max-height 0.5s ease-in-out;
         }
 
         .timeline-item {
@@ -227,7 +238,7 @@
         </div>
     </div>
 
-    <div id="viz-body" style="max-height: 40%; overflow-y: auto; display: flex; padding: 0 var(--panel-padding);">
+    <div id="viz-body">
         <div id="scale"></div>
         <div id="process-timeline" style="display: flex; padding-left: 40px; gap: 20px;">
         </div>
@@ -344,6 +355,10 @@
 
         try {
             await generateTimeline();
+            document.getElementById('left').style.flex = '1';
+            document.getElementById('right').style.flex = '3';
+            document.getElementById('timelineWrap').style.flex = '0.2';
+            document.getElementById('viz-body').style.maxHeight = '50%';
         } finally {
             generateBtn.disabled = false;
             generateBtn.textContent = prev_text;
@@ -389,7 +404,7 @@
 
         const prob_trace = {
             x: prob_x,
-            y: Array(prob_x.length).fill('PROB'),
+            y: Array(prob_x.length).fill(1),
             base: prob_base,
             name: 'PROB',
             type: 'bar',
@@ -401,7 +416,7 @@
 
         const soln_trace = {
             x: soln_x,
-            y: Array(soln_x.length).fill('SOLN'),
+            y: Array(soln_x.length).fill(0),
             base: soln_base,
             name: 'SOLN',
             type: 'bar',
@@ -437,6 +452,9 @@
             yaxis: {
                 title: '',
                 automargin: true,
+                tickvals: [0, 1],
+                ticktext: ['SOLN', 'PROB'],
+                range: [-1, 2]
             },
             bargap: 0.2,
             showlegend: false
