@@ -116,14 +116,6 @@
             transition: flex 0.5s ease-in-out;
         }
 
-        #viz-body {
-            max-height: 40%;
-            overflow-y: auto;
-            display: flex;
-            padding: 0 var(--panel-padding);
-            transition: max-height 0.5s ease-in-out;
-        }
-
         .timeline-item {
             margin: 4px 0;
             cursor: pointer;
@@ -140,43 +132,102 @@
             color: #0057c2;
         }
 
-        #scale {
-            position: relative;
-            border-left: 2px solid #333;
-            margin-left: 50px;
+        .viz-body {
+            display: flex;
+            width: 100%;
+            max-height: 40%;
+            overflow-y: auto;
+            padding: 0 var(--panel-padding);
+            gap: 20px;
         }
 
+        /* Speakers column */
+        #scale {
+            flex: 1;
+            position: relative;
+            /* Reserve gutter for time labels without shifting the axis origin */
+            padding-left: 90px; /* label gutter */
+        }
+
+        #scale .segment {
+            left: 10px; /* offset right so they don’t overlap tick labels */
+            transform: none;
+        }
+
+        #viz-header {
+            overflow: visible;
+            padding-bottom: 8px; /* space between legend and figure */
+        }
+
+        /* Categories container and columns */
+        .process-timeline {
+            flex: 1; /* equal with #scale */
+            display: flex; /* columns side by side */
+            gap: 20px;
+        }
+
+        .process-timeline .column {
+            flex: 1;
+            position: relative;
+            /* no horizontal padding; axis origin stays at x=0 inside .axis */
+        }
+
+        /* Axis wrapper: the shared origin for ticks/segments in each column */
+        .axis {
+            position: relative;
+            height: var(--timeline-height); /* set via JS */
+        }
+
+        /* The vertical axis line at x=0 inside each axis */
+        .axis-line {
+            position: absolute;
+            left: 0; /* origin */
+            width: 2px;
+            height: 100%;
+            background: #eee;
+        }
+
+        /* Ticks in the scale axis */
         .tick {
             position: absolute;
-            left: -8px;
-            width: 8px;
+            left: 0;
+            right: 0; /* extend full width */
             border-top: 1px solid #777;
+            height: 0;
         }
 
         .tick.major {
             border-top-color: #333;
-            left: -12px;
-            width: 12px;
-            font-size: 0.7rem;
-            color: #333;
-            transform: translateY(-50%);
         }
 
         .tick.major .label {
             position: absolute;
-            left: -80px;
+            left: -80px; /* draws into the gutter reserved by #scale padding */
             top: -8px;
             width: 76px;
             text-align: right;
         }
 
+        /* Segments centered on the axis line */
         .segment {
             position: absolute;
-            left: 0;
-            width: 10px;
+            left: 0; /* axis origin */
+            transform: translateX(-50%); /* center over the axis line */
+            width: 12px; /* adjust as needed */
             border-radius: 6px;
-            transform: translateX(-50%);
             opacity: 0.9;
+        }
+
+        /* Legend alignment: match column distribution */
+        #process-legend {
+            display: flex;
+            gap: 20px;
+        }
+
+        #process-legend > div {
+            flex: 1;
+            text-align: center;
+            overflow: hidden; /* prevent clipping */
         }
 
         #generateBtn {
@@ -219,14 +270,13 @@
 <body>
 <div id="left">
     <h2>Transcript</h2>
-    <input id="fileInput" type="file" accept=".docx"/>
+    <input id="fileInput" type="file" accept=".doc,.docx"/>
     <div id="chat"></div>
 </div>
 <div id="right">
     <div style="display:flex; justify-content:space-between; align-items:center;">
         <h2>Design Signature</h2>
         <div id="user-info" style="font-size:0.9em; color:#666;"></div>
-        <button id="logoutBtn" style="font-size:0.8em; padding:2px 6px;">Logout</button>
     </div>
     <div id="timelineWrap">
         <div id="timeline"></div>
@@ -234,13 +284,27 @@
 
     <div id="viz-header" style="padding: var(--panel-padding) var(--panel-padding) 0 var(--panel-padding);">
         <div id="legend"></div>
-        <div id="process-legend" style="display: flex; margin-top: 8px; padding-left: calc(80px + 12px); gap: 20px;">
+        <div id="process-legend">
         </div>
     </div>
 
-    <div id="viz-body">
-        <div id="scale"></div>
-        <div id="process-timeline" style="display: flex; padding-left: 40px; gap: 20px;">
+    <div id="viz-body" class="viz-body">
+        <div id="scale">
+            <div class="axis">
+                <div class="axis-line"></div>
+                <!-- ticks and speaker segments will be appended here -->
+            </div>
+        </div>
+
+        <div id="process-timeline" class="process-timeline">
+            <!-- in JS, each category column will be:
+            <div class="column">
+              <div class="axis">
+                <div class="axis-line"></div>
+                category segments appended here
+        </div>
+    </div>
+    -->
         </div>
     </div>
 
@@ -259,49 +323,68 @@
     const categoryColors = {PROB: "#d9534f", SOLN: "#5cb85c"};
     let scrollSyncHandler;
 
-    fileInput.addEventListener('change', async e => {
-        const file = e.target.files[0];
+    async function processFile(file) {
         if (!file) return;
-        const arrayBuffer = await file.arrayBuffer();
-        const {value: html} = await mammoth.convertToHtml({arrayBuffer});
-        const doc = new DOMParser().parseFromString(html, 'text/html');
-        const sections = extractH1Sections(doc);
-        const transcriptText = getSection(sections, 'Transcript');
-        entries = parseTranscript(transcriptText);
-        // console.log(entries);
-        if (!entries.length) return;
-        entries.forEach(e => e.process_category = "");
-        startSec = toSeconds(entries[0].time);
-        endSec = toSeconds(entries[entries.length - 1].time);
-        assignSpeakerColors();
-        renderAll();
-    });
+        if (!file.name.endsWith('.docx') && !file.name.endsWith('.doc')) {
+            alert('Please upload a .doc or .docx file.');
+            return;
+        }
 
-    async function showLoggedInUser() {
+        document.body.style.cursor = 'wait';
+
         try {
-            const res = await fetch('/.auth/me');
-            if (!res.ok) return;
-            const data = await res.json();
-            if (data && data.length > 0) {
-                const email = data[0].userDetails;
-                document.getElementById('user-info').textContent = `Signed in as ${email}`;
-                console.log('Logged in user:', data[0]);
+            const arrayBuffer = await file.arrayBuffer();
+            const {value: html} = await mammoth.convertToHtml({arrayBuffer});
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const sections = extractH1Sections(doc);
+            const transcriptText = getSection(sections, 'Transcript');
+            entries = parseTranscript(transcriptText);
+
+            if (!entries.length) {
+                alert("Could not parse transcript from the file.");
+                return;
             }
+
+            entries.forEach(e => e.process_category = "");
+            startSec = toSeconds(entries[0].time);
+            endSec = toSeconds(entries[entries.length - 1].time);
+            assignSpeakerColors();
+            renderAll();
+
+            // Automatically trigger timeline generation
+            await generateBtnClicked();
+
         } catch (err) {
-            console.error('Error fetching user info:', err);
+            console.error('Error processing file:', err);
+            alert('An error occurred while processing the file.');
+        } finally {
+            document.body.style.cursor = 'default';
         }
     }
 
-    // Logout handler
-    document.getElementById('logoutBtn').addEventListener('click', () => {
-        // Redirect to logout, then back to the homepage
-        const redirectUri = window.location.origin; // e.g. https://yoursite.azurestaticapps.net
-        window.location.href = `/.auth/logout?post_logout_redirect_uri=${encodeURIComponent(redirectUri)}`;
+    // Drag and drop listeners
+    document.body.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
     });
 
-    // Call on page load
-    window.addEventListener('DOMContentLoaded', () => {
-        showLoggedInUser();
+    document.body.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    document.body.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            await processFile(files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', async e => {
+        const file = e.target.files[0];
+        await processFile(file);
     });
 
     async function generateTimeline() {
@@ -350,25 +433,26 @@
 
     async function generateBtnClicked() {
         generateBtn.disabled = true;
-        const prev_text = generateBtn.textContent;
         generateBtn.textContent = "Processing...";
 
         try {
             await generateTimeline();
             document.getElementById('left').style.flex = '1';
             document.getElementById('right').style.flex = '3';
-            document.getElementById('timelineWrap').style.flex = '0.2';
-            document.getElementById('viz-body').style.maxHeight = '50%';
+            document.getElementById('timelineWrap').style.flex = '1';
         } finally {
             generateBtn.disabled = false;
-            generateBtn.textContent = prev_text;
+            generateBtn.textContent = "Update Design Signature Timeline";
             downloadBtn.hidden = false;
         }
     }
 
-    generateBtn.addEventListener('click', () => {
-        generateBtnClicked();
-        renderAll();
+    generateBtn.addEventListener('click', async () => {
+        if (entries.length === 0) {
+            alert("Please upload a transcript file first.");
+            return;
+        }
+        await generateBtnClicked();
     });
 
     downloadBtn.addEventListener('click', downloadPlot);
@@ -402,32 +486,6 @@
             }
         }
 
-        const prob_trace = {
-            x: prob_x,
-            y: Array(prob_x.length).fill(1),
-            base: prob_base,
-            name: 'PROB',
-            type: 'bar',
-            orientation: 'h',
-            marker: {
-                color: '#1f77b4' // tab:blue
-            }
-        };
-
-        const soln_trace = {
-            x: soln_x,
-            y: Array(soln_x.length).fill(0),
-            base: soln_base,
-            name: 'SOLN',
-            type: 'bar',
-            orientation: 'h',
-            marker: {
-                color: '#1f77b4' // tab:blue
-            }
-        };
-
-        const data = [prob_trace, soln_trace];
-
         const tickvals = [];
         const ticktext = [];
         const duration = endSec - startSec;
@@ -441,20 +499,44 @@
             ticktext.push(fmtTime(endSec));
         }
 
+        const prob_trace = {
+            x: prob_x,
+            y: Array(prob_x.length).fill(0),   // numeric position for PROB
+            base: prob_base,
+            name: 'PROB',
+            type: 'bar',
+            orientation: 'h',
+            marker: {color: '#1f77b4'}
+        };
+
+        const soln_trace = {
+            x: soln_x,
+            y: Array(soln_x.length).fill(1),   // numeric position for SOLN
+            base: soln_base,
+            name: 'SOLN',
+            type: 'bar',
+            orientation: 'h',
+            marker: {color: '#ff7f0e'}
+        };
+
+        const data = [soln_trace, prob_trace];
+
         const layout = {
             title: 'Design Signature Timeline',
             xaxis: {
                 title: 'Time',
                 tickvals: tickvals,
                 ticktext: ticktext,
-                range: [startSec, endSec]
+                range: [startSec, endSec],
+                showgrid: true,          // vertical grid lines
+                zeroline: false
             },
             yaxis: {
-                title: '',
+                tickvals: [0, 1],        // numeric positions
+                ticktext: ['PROB', 'SOLN'],
                 automargin: true,
-                tickvals: [0, 1],
-                ticktext: ['SOLN', 'PROB'],
-                range: [-1, 2]
+                showgrid: true,          // horizontal grid lines
+                zeroline: false
             },
             bargap: 0.2,
             showlegend: false
@@ -551,11 +633,17 @@
     }
 
     function renderAll() {
+        const pxPerSec = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--px-per-sec')) || 2;
+        const duration = Math.max(0, endSec - startSec);
+        const totalHeight = Math.max(200, duration * pxPerSec);
+
+        document.documentElement.style.setProperty('--timeline-height', totalHeight + 'px');
+
         renderChat();
         renderTimeline();
-        renderScale();
+        renderScale(pxPerSec, duration);
         renderLegend();
-        renderProcessTimeline();
+        renderProcessTimeline(pxPerSec, duration);
         setupScrollSync();
     }
 
@@ -607,11 +695,17 @@
         });
     }
 
-    function renderScale() {
-        const pxPerSec = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--px-per-sec')) || 2;
-        const duration = Math.max(0, endSec - startSec);
-        scale.style.height = Math.max(200, duration * pxPerSec) + 'px';
-        scale.innerHTML = '';
+    function renderScale(pxPerSec, duration) {
+        const scaleEl = document.getElementById('scale');
+        scaleEl.innerHTML = '';
+
+        const axis = document.createElement('div');
+        axis.className = 'axis';
+
+        const axisLine = document.createElement('div');
+        axisLine.className = 'axis-line';
+        axis.appendChild(axisLine);
+
         for (let t = 0; t <= duration; t += 10) {
             const y = t * pxPerSec;
             const tick = document.createElement('div');
@@ -624,55 +718,52 @@
                 label.textContent = fmtTime(startSec + t);
                 tick.appendChild(label);
             }
-            scale.appendChild(tick);
+            axis.appendChild(tick);
         }
+
         for (let i = 0; i < entries.length; i++) {
             const curT = toSeconds(entries[i].time);
             const nextT = i < entries.length - 1 ? toSeconds(entries[i + 1].time) : endSec;
             const yTop = (curT - startSec) * pxPerSec;
             const height = Math.max(2, (nextT - curT) * pxPerSec);
+
             const seg = document.createElement('div');
             seg.className = 'segment';
             seg.style.top = yTop + 'px';
             seg.style.height = height + 'px';
             seg.style.background = speakerColors[entries[i].speaker] || '#ccc';
-            scale.appendChild(seg);
+            axis.appendChild(seg);
         }
+
+        scaleEl.appendChild(axis);
     }
 
-    function renderProcessTimeline() {
+    function renderProcessTimeline(pxPerSec, duration) {
         const legendContainer = document.getElementById('process-legend');
         const timelineContainer = document.getElementById('process-timeline');
         legendContainer.innerHTML = '';
         timelineContainer.innerHTML = '';
 
         const categories = Object.keys(categoryColors);
-        const pxPerSec = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--px-per-sec')) || 2;
-        const duration = Math.max(0, endSec - startSec);
-        const totalHeight = Math.max(200, duration * pxPerSec);
 
         categories.forEach(cat => {
             const legendEl = document.createElement('div');
             legendEl.textContent = cat;
             legendEl.style.color = categoryColors[cat];
             legendEl.style.fontWeight = 'bold';
-            legendEl.style.width = '50px';
+            legendEl.style.flex = '1';
             legendEl.style.textAlign = 'center';
             legendContainer.appendChild(legendEl);
 
-            const timelineEl = document.createElement('div');
-            timelineEl.style.position = 'relative';
-            timelineEl.style.width = '50px';
-            timelineEl.style.height = totalHeight + 'px';
+            const column = document.createElement('div');
+            column.className = 'column';
 
-            const line = document.createElement('div');
-            line.style.position = 'absolute';
-            line.style.left = '50%';
-            line.style.transform = 'translateX(-50%)';
-            line.style.width = '2px';
-            line.style.height = '100%';
-            line.style.background = '#eee';
-            timelineEl.appendChild(line);
+            const axis = document.createElement('div');
+            axis.className = 'axis';
+
+            const axisLine = document.createElement('div');
+            axisLine.className = 'axis-line';
+            axis.appendChild(axisLine);
 
             for (let i = 0; i < entries.length; i++) {
                 if (entries[i].process_category === cat) {
@@ -682,11 +773,7 @@
                     const height = Math.max(2, (nextT - curT) * pxPerSec);
 
                     const seg = document.createElement('div');
-                    seg.style.position = 'absolute';
-                    seg.style.left = '50%';
-                    seg.style.transform = 'translateX(-50%)';
-                    seg.style.width = '20px';
-                    seg.style.borderRadius = '5px';
+                    seg.className = 'segment';
                     seg.style.top = yTop + 'px';
                     seg.style.height = height + 'px';
                     seg.style.background = categoryColors[cat];
@@ -702,10 +789,12 @@
                     };
                     seg.onclick = () => scrollBubbleIntoView(i);
 
-                    timelineEl.appendChild(seg);
+                    axis.appendChild(seg);
                 }
             }
-            timelineContainer.appendChild(timelineEl);
+
+            column.appendChild(axis);
+            timelineContainer.appendChild(column);
         });
     }
 
