@@ -143,15 +143,34 @@
 
         /* Speakers column */
         #scale {
-            flex: 1;
             position: relative;
-            /* Reserve gutter for time labels without shifting the axis origin */
-            padding-left: 90px; /* label gutter */
+            border-left: 2px solid #333;
+            /* choose one approach: margin OR padding */
+            /* Option A: previous behavior */
+            /*margin-left: 50px;*/
+
+            /* Option B: current gutter approach (if you prefer) */
+            padding-left: 90px;
         }
 
         #scale .segment {
-            left: 10px; /* offset right so they don’t overlap tick labels */
-            transform: none;
+            left: 10px; /* offset right of axis */
+            transform: none; /* don’t center over axis */
+            width: 12px;
+        }
+
+        #process-timeline .segment {
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+        }
+
+        #scale {
+            border-right: 1px solid #ddd;
+        }
+
+        #process-timeline .column {
+            border-left: 1px solid #eee;
         }
 
         #viz-header {
@@ -190,19 +209,24 @@
         /* Ticks in the scale axis */
         .tick {
             position: absolute;
-            left: 0;
-            right: 0; /* extend full width */
+            left: -8px; /* small stub aligned to axis */
+            width: 8px;
             border-top: 1px solid #777;
             height: 0;
         }
 
         .tick.major {
             border-top-color: #333;
+            left: -12px;
+            width: 12px;
+            font-size: 0.7rem;
+            color: #333;
+            transform: translateY(-50%);
         }
 
         .tick.major .label {
             position: absolute;
-            left: -80px; /* draws into the gutter reserved by #scale padding */
+            left: -80px;
             top: -8px;
             width: 76px;
             text-align: right;
@@ -219,16 +243,6 @@
         }
 
         /* Legend alignment: match column distribution */
-        #process-legend {
-            display: flex;
-            gap: 20px;
-        }
-
-        #process-legend > div {
-            flex: 1;
-            text-align: center;
-            overflow: hidden; /* prevent clipping */
-        }
 
         #generateBtn {
             margin-bottom: 8px;
@@ -284,7 +298,10 @@
 
     <div id="viz-header" style="padding: var(--panel-padding) var(--panel-padding) 0 var(--panel-padding);">
         <div id="legend"></div>
-        <div id="process-legend">
+        <div style="display: flex; gap: 20px;">
+            <div style="flex: 1; padding-left: 90px;"></div>
+            <div id="process-legend" style="flex: 1;">
+            </div>
         </div>
     </div>
 
@@ -739,22 +756,12 @@
     }
 
     function renderProcessTimeline(pxPerSec, duration) {
-        const legendContainer = document.getElementById('process-legend');
         const timelineContainer = document.getElementById('process-timeline');
-        legendContainer.innerHTML = '';
         timelineContainer.innerHTML = '';
 
         const categories = Object.keys(categoryColors);
 
         categories.forEach(cat => {
-            const legendEl = document.createElement('div');
-            legendEl.textContent = cat;
-            legendEl.style.color = categoryColors[cat];
-            legendEl.style.fontWeight = 'bold';
-            legendEl.style.flex = '1';
-            legendEl.style.textAlign = 'center';
-            legendContainer.appendChild(legendEl);
-
             const column = document.createElement('div');
             column.className = 'column';
 
@@ -801,13 +808,24 @@
     function renderLegend() {
         const legend = document.getElementById('legend');
         legend.innerHTML = '';
-        getSpeakers().forEach(spk => {
+
+        // Speakers
+        Object.keys(speakerColors).forEach(spk => {
             const chip = document.createElement('div');
             chip.className = 'chip';
-            chip.innerHTML = `<span class="color" style="background:${speakerColors[spk]}"></span>${escapeHtml(spk)}`;
+            chip.innerHTML = `<span class="color" style="background:${speakerColors[spk]}"></span>${spk}`;
+            legend.appendChild(chip);
+        });
+
+        // Process categories (PROB, SOLN)
+        Object.keys(categoryColors).forEach(cat => {
+            const chip = document.createElement('div');
+            chip.className = 'chip';
+            chip.innerHTML = `<span class="color" style="background:${categoryColors[cat]}"></span>${cat}`;
             legend.appendChild(chip);
         });
     }
+
 
     function showCategoryMenu(idx, target) {
         const menu = document.createElement('div');
