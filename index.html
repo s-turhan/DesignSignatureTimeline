@@ -206,6 +206,8 @@
     </style>
 </head>
 <body>
+<pre id="debugPrompt" style="background:#eee; padding:1em;"></pre>
+<pre id="debugApiResponse" style="background:#eef; padding:1em;"></pre>
 <div id="left">
     <h2>Transcript</h2>
     <input id="fileInput" type="file" accept=".docx"/>
@@ -291,7 +293,7 @@
         showLoggedInUser();
     });
 
-    async function generateBtnClicked() {
+    async function generateTimeline() {
         try {
             const response = await fetch('/api/categorize', {
                 method: 'POST',
@@ -315,7 +317,18 @@
             console.log('Categorization response:', data);
 
             data.results.forEach((item, i) => {
-                entries[i].process_category = item.category || '';
+                if (item.__debugPrompt) {
+                    console.log("DEBUG PROMPT:\n", item.__debugPrompt);
+                    // optionally show in a <pre id="debugPrompt"></pre>
+                    const el = document.getElementById("debugPrompt");
+                    if (el) el.textContent = item.__debugPrompt;
+                } else if (item.__debugApiResponse) {
+                    console.log("DEBUG API RESPONSE:\n", item.__debugApiResponse);
+                    const el = document.getElementById("debugApiResponse");
+                    if (el) el.textContent = item.__debugApiResponse;
+                } else if (entries[i]) {
+                    entries[i].process_category = item.category || '';
+                }
             });
 
             renderAll();
@@ -324,13 +337,21 @@
         }
     }
 
-    generateBtn.addEventListener('click', () => {
-        generateBtnClicked();
-    });
+    async function generateBtnClicked() {
+        generateBtn.disabled = true;
+        const prev_text = generateBtn.textContent;
+        generateBtn.textContent = "Processing...";
+
+        try {
+            await generateTimeline();
+        } finally {
+            generateBtn.disabled = false;
+            generateBtn.textContent = prev_text;
+        }
+    }
 
     generateBtn.addEventListener('click', () => {
         const categories = Object.keys(categoryColors);
-        entries.forEach(e => e.process_category = categories[Math.floor(Math.random() * categories.length)]);
         generateBtnClicked();
         renderAll();
     });
