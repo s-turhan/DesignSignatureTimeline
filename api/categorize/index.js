@@ -1,5 +1,5 @@
-const Anthropic = require("@anthropic-ai/sdk");
-const PQueue = require("p-queue");
+import Anthropic from "@anthropic-ai/sdk";
+import PQueue from "p-queue";
 
 const MAX_CHARS = 4000;
 
@@ -25,7 +25,7 @@ function checkAndIncrement(clientId) {
 // Anthropic client
 const anthropic = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY});
 
-module.exports = async function (context, req) {
+export default async function (context, req) {
     try {
         const body = req.body || {};
         const entries = Array.isArray(body.entries) ? body.entries : [];
